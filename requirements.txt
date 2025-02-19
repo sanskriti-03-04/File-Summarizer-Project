@@ -1,0 +1,12 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Feb 19 15:34:00 2025
+
+@author: sansk
+"""
+
+streamlit
+transformers
+pymupdf
+python-docx
+torch
