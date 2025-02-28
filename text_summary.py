@@ -1,81 +1,82 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Feb 19 14:44:54 2025
-
-@author: sansk
-"""
 import streamlit as st
+import pandas as pd
 from transformers import pipeline
 import fitz  # PyMuPDF for PDF extraction
 import docx  # python-docx for DOCX extraction
 from io import BytesIO
 
+# Function to process log files
+def process_log_file(uploaded_file):
+    log_data = []
+    for line in uploaded_file:
+        decoded_line = line.decode("utf-8").strip()
+        if "ERROR" in decoded_line:
+            log_data.append((decoded_line, "ERROR"))
+        elif "WARNING" in decoded_line:
+            log_data.append((decoded_line, "WARNING"))
+        else:
+            log_data.append((decoded_line, "INFO"))
+    
+    return pd.DataFrame(log_data, columns=["Log Message", "Category"])
+
+# Function to extract text from PDFs
 def extract_text_from_pdf(pdf_file):
-    """Extract text from a PDF file."""
     doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
     text = "\n".join([page.get_text("text") for page in doc])
     return text
 
+# Function to extract text from DOCX
 def extract_text_from_docx(docx_file):
-    """Extract text from a DOCX file."""
     doc = docx.Document(docx_file)
     text = "\n".join([para.text for para in doc.paragraphs])
     return text
 
+# Function to summarize text
 def summarize_text(text, max_length=150, min_length=50):
-    """Generates a summary using an AI model."""
+    if not text.strip():
+        return "No valid text found for summarization."
+
     summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-    summary = summarizer(text, max_length=max_length, min_length=min_length, do_sample=False)[0]["summary_text"]
-    return summary
+    # Ensure text fits within model limits
+    max_input_length = 1024  # Token limit for the model
+    chunk_size = max_input_length  # Ensure each chunk fits the model
+    chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)] 
+    summaries = []
+    for chunk in chunks:
+        summary = summarizer(chunk, max_length=max_length, min_length=min_length, do_sample=False)[0]["summary_text"]
+        summaries.append(summary)
 
-def generate_pdf(summary):
-    """Creates a PDF file with the summary text."""
-    pdf_buffer = BytesIO()
-    doc = fitz.open()
-    page = doc.new_page()
-    page.insert_text((72, 72), summary, fontsize=12)
-    doc.save(pdf_buffer)
-    pdf_buffer.seek(0)
-    return pdf_buffer
+    return " ".join(summaries)  # Merge summaries for final output
 
-def main():
-    st.set_page_config(page_title="Text Summarizer", layout="centered")
-    st.title("📄 Text Summarizer")
-    st.write("Upload a document (PDF/DOCX) or enter text to generate a summary.")
-    
-    # Sidebar controls
-    st.sidebar.header("Summary Settings")
-    max_length = st.sidebar.slider("Max Length", 50, 500, 150)
-    min_length = st.sidebar.slider("Min Length", 20, 100, 50)
-    
-    # File uploader
-    uploaded_file = st.file_uploader("Upload File (PDF/DOCX)", type=["pdf", "docx"])
-    text = ""
-    
-    if uploaded_file is not None:
-        file_extension = uploaded_file.name.split(".")[-1]
-        if file_extension == "pdf":
-            text = extract_text_from_pdf(uploaded_file)
-        elif file_extension == "docx":
-            text = extract_text_from_docx(uploaded_file)
-    
-    # If no file is uploaded, allow manual text input
-    text = text or st.text_area("Or Paste Your Text Here")
-    
-    if st.button("Summarize"):
-        if text:
-            summary = summarize_text(text, max_length, min_length)
-            st.write("### ✨ Summary:")
+
+# Streamlit App
+st.set_page_config(page_title="Log & Text Summarizer", layout="wide")
+st.title("🔍 Log & Document Analyzer & Summarizer")
+st.write("Upload a `.log`, `.txt`, `.pdf`, or `.docx` file to analyze system logs or summarize text.")
+
+uploaded_file = st.file_uploader("Upload File", type=["log", "txt", "pdf", "docx"])
+text = ""
+
+if uploaded_file:
+    file_extension = uploaded_file.name.split(".")[-1]
+    if file_extension in ["log", "txt"]:
+        logs_df = process_log_file(uploaded_file)
+        st.write("### Parsed Log Data")
+        st.dataframe(logs_df)
+        if st.button("Summarize Errors & Warnings"):
+            summary = summarize_text("\n".join(logs_df[logs_df['Category'].isin(["ERROR", "WARNING"])] ["Log Message"].tolist()))
+            st.write("### 🚀 Summary of Critical Logs:")
             st.write(summary)
-            
-            # Option to download the summary as a text file
-            st.download_button(label="Download Summary as TXT", data=summary, file_name="summary.txt", mime="text/plain")
-            
-            # Option to download the summary as a PDF
-            pdf_buffer = generate_pdf(summary)
-            st.download_button(label="Download Summary as PDF", data=pdf_buffer, file_name="summary.pdf", mime="application/pdf")
-        else:
-            st.error("Please enter text or upload a file.")
+    elif file_extension == "pdf":
+        text = extract_text_from_pdf(uploaded_file)
+    elif file_extension == "docx":
+        text = extract_text_from_docx(uploaded_file)
 
-if __name__ == "__main__":
-    main()
+if text:
+    st.write("### Extracted Text")
+    st.text_area("Extracted Content", text, height=300)
+    if st.button("Summarize Document"):
+        summary = summarize_text(text)
+        st.write("### ✨ Summary:")
+        st.write(summary)
+
