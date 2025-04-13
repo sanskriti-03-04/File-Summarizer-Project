@@ -8,7 +8,7 @@ Features :
 2) Summarization ->	HuggingFace Transformers
 3) File Handling	-> PyMuPDF, python-docx, pandas
 4) Model Used	-> facebook/bart-large-cnn (or distilbart)
-5) Deployment	-> Streamlit Cloud / Render
+5) Deployment	-> Streamlit Cloud 
 
 Future Improvements
  1) Faster working model
